@@ -64,10 +64,51 @@ void desenha_pio(const double *pattern, uint32_t led_value, PIO pio, uint sm, do
   }
 }
 
+// Função de interrupção para manipular os botões com debounce
+void handle_button_interrupt(uint gpio, uint32_t events)
+{
+  uint32_t current_time = to_us_since_boot(get_absolute_time());
+
+  // Implementação de debounce para evitar leituras repetidas rápidas
+  if (current_time - last_button_event > 200000)
+  {
+    last_button_event = current_time;
+
+    if (gpio == BUTTON_A)
+    {
+      gpio_put(GREEN_LED, !gpio_get(GREEN_LED));
+
+      // Atualiza o display OLED com o estado do LED verde
+      ssd1306_fill(&display, false);
+      ssd1306_draw_string(&display, gpio_get(GREEN_LED) ? "Green LED On" : "Green LED Off", 20, 30);
+      ssd1306_send_data(&display);
+      printf("Green LED %s\n", gpio_get(GREEN_LED) ? "On" : "Off");
+    }
+
+    if (gpio == BUTTON_B)
+    {
+      gpio_put(BLUE_LED, !gpio_get(BLUE_LED));
+
+      // Atualiza o display OLED com o estado do LED azul
+      ssd1306_fill(&display, false);
+      ssd1306_draw_string(&display, gpio_get(BLUE_LED) ? "Blue LED On" : "Blue LED Off", 20, 30);
+      ssd1306_send_data(&display);
+      printf("Blue LED %s\n", gpio_get(BLUE_LED) ? "On" : "Off");
+    }
+  }
+}
+
 int main()
 {
+  // Configuração do clock do sistema
+  if (!set_sys_clock_khz(128000, false))
+  {
+    printf("Failed to set clock speed\n");
+    return 1;
+  }
 
   stdio_init_all();
+  printf("Starting PIO communication...\n");
 
   // Configuração do PIO para a matriz de LEDs
   program_offset = pio_add_program(pio_instance, &pio_matrix_program);
@@ -92,7 +133,45 @@ int main()
   gpio_set_dir(BUTTON_B, GPIO_IN);
   gpio_pull_up(BUTTON_B);
 
-    while (true)
+  // Inicializa o barramento I2C e o display OLED
+  i2c_init(I2C_PORT, 400 * 1000);
+  gpio_set_function(I2C_SDA, GPIO_FUNC_I2C);
+  gpio_set_function(I2C_SCL, GPIO_FUNC_I2C);
+  gpio_pull_up(I2C_SDA);
+  gpio_pull_up(I2C_SCL);
+
+  ssd1306_init(&display, WIDTH, HEIGHT, false, DISPLAY_ADDR, I2C_PORT);
+  ssd1306_config(&display);
+  ssd1306_send_data(&display);
+  ssd1306_fill(&display, false);
+  ssd1306_send_data(&display);
+
+  // Configuração das interrupções para os botões
+  gpio_set_irq_enabled_with_callback(BUTTON_A, GPIO_IRQ_EDGE_FALL, true, &handle_button_interrupt);
+  gpio_set_irq_enabled_with_callback(BUTTON_B, GPIO_IRQ_EDGE_FALL, true, &handle_button_interrupt);
+
+  // Loop principal aguardando entrada via USB
+  while (true)
   {
+    if (stdio_usb_connected())
+    {
+      char input_char;
+      if (scanf("%c", &input_char) == 1)
+      {
+        printf("Received: %c\n", input_char);
+
+        // Exibe o caractere recebido no display OLED
+        ssd1306_fill(&display, false);
+        ssd1306_draw_string(&display, &input_char, 30, 30);
+        ssd1306_send_data(&display);
+
+        // Se o caractere recebido for um número, atualiza a matriz de LEDs
+        if (input_char >= '0' && input_char <= '9')
+        {
+          int number = input_char - '0';
+          desenha_pio(numbers[number], led_color, pio_instance, sm_instance, red_intensity, green_intensity, blue_intensity);
+        }
+      }
+    }
   }
 }

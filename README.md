@@ -82,4 +82,4 @@ cd EmbarcaTechSerialCommunication
 
 ## Vídeo de Demonstração
 
-[Assista ao vídeo de demonstração aqui]()
+[Assista ao vídeo de demonstração aqui](https://youtu.be/D615aMnlhqc)
